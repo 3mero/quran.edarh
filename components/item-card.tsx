@@ -1,9 +1,19 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu"
 import {
   Check,
   Undo,
@@ -49,16 +59,21 @@ interface ItemData {
   color?: string
   hidden?: boolean
   audioNotes?: AudioNote[]
+  completionBatchId?: string
+  batchColor?: string
 }
 
 interface ItemCardProps {
   item: ItemData
+  items: ItemData[]
   mode: "hizb" | "juz"
   onUpdate: (updatedItem: ItemData) => void
   onShowDetails: (item: ItemData) => void
+  onComplete: (startNumber: number, count: number) => void
+  onUndo: (itemsToUndoNumbers: number[]) => void
 }
 
-export default function ItemCard({ item, mode, onUpdate, onShowDetails }: ItemCardProps) {
+export default function ItemCard({ item, items, mode, onUpdate, onShowDetails, onComplete, onUndo }: ItemCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [isEditingNote, setIsEditingNote] = useState(false)
   const [showColorPicker, setShowColorPicker] = useState(false)
@@ -66,10 +81,10 @@ export default function ItemCard({ item, mode, onUpdate, onShowDetails }: ItemCa
   const [galleryIndex, setGalleryIndex] = useState(0)
   const [loadedImages, setLoadedImages] = useState<ImageData[]>([])
   const [loadedAudio, setLoadedAudio] = useState<AudioNote[]>([])
+  const [customCompleteCount, setCustomCompleteCount] = useState<string>("")
 
   const itemId = `${mode}_${item.number}`
 
-  // تحميل الوسائط عند فتح البطاقة
   useEffect(() => {
     if (isExpanded) {
       loadMedia()
@@ -79,7 +94,6 @@ export default function ItemCard({ item, mode, onUpdate, onShowDetails }: ItemCa
   const loadMedia = async () => {
     try {
       const [images, audios] = await Promise.all([mediaStorage.getImages(itemId), mediaStorage.getAudio(itemId)])
-
       setLoadedImages(images)
       setLoadedAudio(audios)
     } catch (error) {
@@ -87,59 +101,24 @@ export default function ItemCard({ item, mode, onUpdate, onShowDetails }: ItemCa
     }
   }
 
-  const handleComplete = () => {
-    const updatedItem = {
-      ...item,
-      completed: true,
-      completedTime: new Date().toLocaleString(),
-    }
-    onUpdate(updatedItem)
-  }
-
-  const handleUndo = () => {
-    const updatedItem = {
-      ...item,
-      completed: false,
-      completedTime: undefined,
-    }
-    onUpdate(updatedItem)
-  }
-
   const handleToggleVisibility = () => {
-    const updatedItem = {
-      ...item,
-      hidden: !item.hidden,
-    }
-    onUpdate(updatedItem)
+    onUpdate({ ...item, hidden: !item.hidden })
   }
 
   const handleColorChange = (color: string) => {
-    const updatedItem = {
-      ...item,
-      color,
-    }
-    onUpdate(updatedItem)
+    onUpdate({ ...item, color })
     setShowColorPicker(false)
   }
 
   const handleSaveNote = (note: string, images: ImageData[]) => {
-    const updatedItem = {
-      ...item,
-      note: note.trim() || undefined,
-      images,
-    }
-    onUpdate(updatedItem)
+    onUpdate({ ...item, note: note.trim() || undefined, images })
     setLoadedImages(images)
     setIsEditingNote(false)
   }
 
   const handleSaveAudio = (audioNote: AudioNote) => {
     const updatedAudio = [...loadedAudio, audioNote]
-    const updatedItem = {
-      ...item,
-      audioNotes: updatedAudio,
-    }
-    onUpdate(updatedItem)
+    onUpdate({ ...item, audioNotes: updatedAudio })
     setLoadedAudio(updatedAudio)
   }
 
@@ -147,11 +126,7 @@ export default function ItemCard({ item, mode, onUpdate, onShowDetails }: ItemCa
     try {
       await mediaStorage.deleteAudio(audioId)
       const updatedAudio = loadedAudio.filter((audio) => audio.id !== audioId)
-      const updatedItem = {
-        ...item,
-        audioNotes: updatedAudio,
-      }
-      onUpdate(updatedItem)
+      onUpdate({ ...item, audioNotes: updatedAudio })
       setLoadedAudio(updatedAudio)
     } catch (error) {
       console.error("Error deleting audio:", error)
@@ -161,11 +136,7 @@ export default function ItemCard({ item, mode, onUpdate, onShowDetails }: ItemCa
 
   const handleEditAudio = (audioId: string, newTitle: string) => {
     const updatedAudio = loadedAudio.map((audio) => (audio.id === audioId ? { ...audio, title: newTitle } : audio))
-    const updatedItem = {
-      ...item,
-      audioNotes: updatedAudio,
-    }
-    onUpdate(updatedItem)
+    onUpdate({ ...item, audioNotes: updatedAudio })
     setLoadedAudio(updatedAudio)
   }
 
@@ -173,14 +144,8 @@ export default function ItemCard({ item, mode, onUpdate, onShowDetails }: ItemCa
     try {
       await Promise.all(imageIds.map((id) => mediaStorage.deleteImage(id)))
       const updatedImages = loadedImages.filter((img) => !imageIds.includes(img.id))
-      const updatedItem = {
-        ...item,
-        images: updatedImages,
-      }
-      onUpdate(updatedItem)
+      onUpdate({ ...item, images: updatedImages })
       setLoadedImages(updatedImages)
-
-      // إغلاق المعرض إذا تم حذف جميع الصور
       if (updatedImages.length === 0) {
         setShowImageGallery(false)
       }
@@ -195,10 +160,30 @@ export default function ItemCard({ item, mode, onUpdate, onShowDetails }: ItemCa
     setShowImageGallery(true)
   }
 
-  // تحديد ما إذا كان العنصر يحتوي على محتوى
   const hasNote = item.note && item.note.trim().length > 0
   const hasImages = (item.images && item.images.length > 0) || (loadedImages && loadedImages.length > 0)
   const hasAudio = (item.audioNotes && item.audioNotes.length > 0) || (loadedAudio && loadedAudio.length > 0)
+
+  const remainingItemsCount = items.filter((i) => !i.completed && i.number >= item.number).length
+  const completeOptions = Array.from({ length: Math.min(5, remainingItemsCount) }, (_, i) => i + 1)
+  const batchItems = item.completionBatchId ? items.filter((i) => i.completionBatchId === item.completionBatchId) : []
+
+  const handleCustomComplete = (e: React.MouseEvent) => {
+    e.preventDefault()
+    const count = Number.parseInt(customCompleteCount, 10)
+    if (isNaN(count) || count <= 0) {
+      alert("الرجاء إدخال رقم صحيح أكبر من صفر.")
+      return
+    }
+    if (count > remainingItemsCount) {
+      alert(
+        `لا يمكن إنهاء أكثر من ${remainingItemsCount} ${mode === "hizb" ? "حزب" : "جزء"}. المتبقي هو ${remainingItemsCount} فقط.`,
+      )
+      return
+    }
+    onComplete(item.number, count)
+    setCustomCompleteCount("")
+  }
 
   if (item.hidden) {
     return null
@@ -207,8 +192,12 @@ export default function ItemCard({ item, mode, onUpdate, onShowDetails }: ItemCa
   return (
     <>
       <Card
-        className="w-full transition-all duration-200 hover:shadow-xl bg-slate-800 border-slate-600"
-        style={{ backgroundColor: item.color && item.color !== "#1e1e2f" ? item.color : undefined }}
+        className="w-full transition-all duration-200 hover:shadow-xl bg-slate-800"
+        style={{
+          backgroundColor: item.color && item.color !== "#1e1e2f" ? item.color : undefined,
+          borderColor: item.batchColor || "#475569", // slate-600
+          borderWidth: item.batchColor ? "2px" : "1px",
+        }}
       >
         <CardHeader className="pb-3">
           <div className="flex justify-between items-center">
@@ -224,8 +213,6 @@ export default function ItemCard({ item, mode, onUpdate, onShowDetails }: ItemCa
                   مكتمل
                 </Badge>
               )}
-
-              {/* أيقونات المحتوى */}
               <div className="flex items-center gap-1">
                 {hasNote && (
                   <div
@@ -253,7 +240,6 @@ export default function ItemCard({ item, mode, onUpdate, onShowDetails }: ItemCa
                 )}
               </div>
             </div>
-
             <div className="flex items-center gap-1">
               <Button
                 variant="ghost"
@@ -277,30 +263,65 @@ export default function ItemCard({ item, mode, onUpdate, onShowDetails }: ItemCa
 
         {isExpanded && (
           <CardContent className="space-y-4">
-            {/* Action Buttons */}
             <div className="flex flex-wrap gap-2">
-              <Button
-                onClick={item.completed ? handleUndo : handleComplete}
-                variant={item.completed ? "outline" : "default"}
-                size="sm"
-                className={`flex items-center gap-1 ${
-                  item.completed
-                    ? "border-slate-600 text-slate-200 hover:bg-slate-700 hover:text-white"
-                    : "bg-emerald-600 hover:bg-emerald-700 text-white"
-                }`}
-              >
-                {item.completed ? (
-                  <>
-                    <Undo className="h-4 w-4" />
-                    تراجع
-                  </>
-                ) : (
-                  <>
-                    <Check className="h-4 w-4" />
-                    إنهاء
-                  </>
-                )}
-              </Button>
+              {item.completed ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex items-center gap-1 border-slate-600 text-slate-200 hover:bg-slate-700 hover:text-white bg-transparent"
+                    >
+                      <Undo className="h-4 w-4" />
+                      تراجع
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuItem onSelect={() => onUndo([item.number])}>تراجع عن هذا فقط</DropdownMenuItem>
+                    {batchItems.length > 1 && (
+                      <DropdownMenuItem onSelect={() => onUndo(batchItems.map((i) => i.number))}>
+                        تراجع عن المجموعة كلها ({batchItems.length})
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="sm"
+                      className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                    >
+                      <Check className="h-4 w-4" />
+                      إنهاء
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    {completeOptions.map((count) => (
+                      <DropdownMenuItem key={count} onSelect={() => onComplete(item.number, count)}>
+                        إنهاء {count} {mode === "hizb" ? "حزب" : "جزء"}
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuSeparator />
+                    <div className="p-2" onClick={(e) => e.stopPropagation()}>
+                      <p className="text-xs text-slate-400 mb-2">أو أدخل رقماً مخصصاً:</p>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          placeholder="العدد"
+                          className="h-8 bg-slate-800 border-slate-600"
+                          value={customCompleteCount}
+                          onChange={(e) => setCustomCompleteCount(e.target.value)}
+                          onKeyDown={(e) => e.stopPropagation()}
+                        />
+                        <Button size="sm" className="h-8" onClick={handleCustomComplete}>
+                          تأكيد
+                        </Button>
+                      </div>
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
 
               <Button
                 onClick={() => onShowDetails(item)}
@@ -311,7 +332,6 @@ export default function ItemCard({ item, mode, onUpdate, onShowDetails }: ItemCa
                 <Info className="h-4 w-4" />
                 تفاصيل
               </Button>
-
               <Button
                 onClick={() => setIsEditingNote(!isEditingNote)}
                 variant="outline"
@@ -321,7 +341,6 @@ export default function ItemCard({ item, mode, onUpdate, onShowDetails }: ItemCa
                 <Edit className="h-4 w-4" />
                 {item.note ? "تعديل الملاحظة" : "إضافة ملاحظة"}
               </Button>
-
               <div className="relative">
                 <Button
                   onClick={() => setShowColorPicker(!showColorPicker)}
@@ -332,7 +351,6 @@ export default function ItemCard({ item, mode, onUpdate, onShowDetails }: ItemCa
                   <Palette className="h-4 w-4" />
                   اللون
                 </Button>
-
                 {showColorPicker && (
                   <div className="absolute top-full mt-1 z-10 bg-slate-800 border border-slate-600 rounded-lg p-3 shadow-xl">
                     <div className="grid grid-cols-4 gap-2">
@@ -363,14 +381,12 @@ export default function ItemCard({ item, mode, onUpdate, onShowDetails }: ItemCa
               </div>
             </div>
 
-            {/* Completion Info */}
             {item.completed && item.completedTime && (
               <div className="text-sm text-emerald-300 bg-emerald-900/20 border border-emerald-500/30 p-3 rounded-lg">
                 تم الانتهاء: {item.completedTime}
               </div>
             )}
 
-            {/* Note Section */}
             {isEditingNote ? (
               <NoteEditor
                 itemId={itemId}
@@ -384,12 +400,8 @@ export default function ItemCard({ item, mode, onUpdate, onShowDetails }: ItemCa
                 <div className="bg-slate-700 border border-slate-600 p-4 rounded-lg">
                   <h4 className="font-medium mb-2 text-white">الملاحظة:</h4>
                   <p className="text-sm whitespace-pre-wrap text-slate-200">{item.note}</p>
-
                   {loadedImages.length > 0 && (
                     <div className="mt-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm text-slate-300">الصور المرفقة ({loadedImages.length})</span>
-                      </div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                         {loadedImages.map((image, index) => (
                           <img
@@ -407,7 +419,6 @@ export default function ItemCard({ item, mode, onUpdate, onShowDetails }: ItemCa
               )
             )}
 
-            {/* Audio Recorder */}
             <AudioRecorder
               itemId={itemId}
               audioNotes={loadedAudio}
@@ -419,7 +430,6 @@ export default function ItemCard({ item, mode, onUpdate, onShowDetails }: ItemCa
         )}
       </Card>
 
-      {/* Image Gallery */}
       <ImageGallery
         images={loadedImages}
         isOpen={showImageGallery}
