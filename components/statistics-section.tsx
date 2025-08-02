@@ -5,15 +5,25 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChevronUp, ChevronDown, Share2, BarChart3 } from "lucide-react"
 
+interface ItemData {
+  number: number
+  day: string
+  completed: boolean
+  completedTime?: string
+  completionBatchId?: string
+}
+
 interface StatisticsSectionProps {
   mode: "hizb" | "juz"
+  items: ItemData[]
   completedCount: number
   remainingCount: number
-  lastCompleted: any
+  lastCompleted: ItemData | undefined
 }
 
 export default function StatisticsSection({
   mode,
+  items,
   completedCount,
   remainingCount,
   lastCompleted,
@@ -21,21 +31,52 @@ export default function StatisticsSection({
   const [isVisible, setIsVisible] = useState(true)
 
   const shareProgress = () => {
-    if (lastCompleted) {
-      const date = new Date()
-      const days = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"]
-      const dayName = days[date.getDay()]
-      const formattedDate = date.toLocaleDateString()
-      const formattedTime = date.toLocaleTimeString()
+    if (!lastCompleted) {
+      alert("لم يتم إكمال أي حزب/جزء بعد.")
+      return
+    }
 
-      const message = `تم بحمد الله وتوفيقه إكمال ${mode === "hizb" ? "الحزب" : "الجزء"} رقم ${lastCompleted.number}.
-آخر قراءة وحفظ كان ${mode === "hizb" ? "الحزب" : "الجزء"} رقم ${lastCompleted.number} في يوم ${dayName}، بتاريخ ${formattedDate}، والساعة ${formattedTime}.
+    const date = new Date()
+    const days = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"]
+    const dayName = days[date.getDay()]
+    const formattedDate = date.toLocaleDateString()
+    const formattedTime = date.toLocaleTimeString()
+
+    let completionMessage = ""
+    if (lastCompleted.completionBatchId) {
+      const batchItems = items.filter((i) => i.completionBatchId === lastCompleted.completionBatchId)
+      if (batchItems.length > 1) {
+        const first = batchItems[0].number
+        const last = batchItems[batchItems.length - 1].number
+        completionMessage = `تم بحمد الله وتوفيقه إكمال ${mode === "hizb" ? "الأحزاب" : "الأجزاء"} من ${first} إلى ${last}.`
+      } else {
+        completionMessage = `تم بحمد الله وتوفيقه إكمال ${mode === "hizb" ? "الحزب" : "الجزء"} رقم ${lastCompleted.number}.`
+      }
+    } else {
+      completionMessage = `تم بحمد الله وتوفيقه إكمال ${mode === "hizb" ? "الحزب" : "الجزء"} رقم ${lastCompleted.number}.`
+    }
+
+    const message = `${completionMessage}
+آخر قراءة وحفظ كانت في يوم ${dayName}، بتاريخ ${formattedDate}، والساعة ${formattedTime}.
 ${mode === "hizb" ? "الأحزاب" : "الأجزاء"} المتبقية: ${remainingCount}.`
 
-      const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`
-      window.open(whatsappUrl, "_blank")
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`
+    window.open(whatsappUrl, "_blank")
+  }
+
+  let lastCompletedDisplay = null
+  if (lastCompleted) {
+    if (lastCompleted.completionBatchId) {
+      const batchItems = items.filter((i) => i.completionBatchId === lastCompleted.completionBatchId)
+      if (batchItems.length > 1) {
+        const first = batchItems[0].number
+        const last = batchItems[batchItems.length - 1].number
+        lastCompletedDisplay = `${mode === "hizb" ? "الأحزاب" : "الأجزاء"} من ${first} إلى ${last}`
+      } else {
+        lastCompletedDisplay = `${mode === "hizb" ? "حزب" : "جزء"} ${lastCompleted.number}`
+      }
     } else {
-      alert("لم يتم إكمال أي حزب/جزء بعد.")
+      lastCompletedDisplay = `${mode === "hizb" ? "حزب" : "جزء"} ${lastCompleted.number}`
     }
   }
 
@@ -79,8 +120,7 @@ ${mode === "hizb" ? "الأحزاب" : "الأجزاء"} المتبقية: ${rem
               <h3 className="font-semibold mb-2 text-white">آخر ما تم إنهاؤه:</h3>
               <div className="space-y-1 text-sm text-slate-300">
                 <div>
-                  <span className="font-medium text-emerald-400">العنصر:</span> {mode === "hizb" ? "حزب" : "جزء"}{" "}
-                  {lastCompleted.number}
+                  <span className="font-medium text-emerald-400">العنصر:</span> {lastCompletedDisplay}
                 </div>
                 <div>
                   <span className="font-medium text-emerald-400">التاريخ:</span> {lastCompleted.completedTime}
@@ -93,6 +133,7 @@ ${mode === "hizb" ? "الأحزاب" : "الأجزاء"} المتبقية: ${rem
             onClick={shareProgress}
             className="w-full flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700"
             variant="default"
+            disabled={!lastCompleted}
           >
             <Share2 className="h-4 w-4" />
             مشاركة التقدم عبر الواتساب
